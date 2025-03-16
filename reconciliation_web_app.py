@@ -5,6 +5,51 @@ import numpy as np
 import requests
 from datetime import timedelta
 
+# Apply custom styles to improve UI
+def set_custom_styles():
+    st.markdown(
+        """
+        <style>
+        /* Background and font styling */
+        body {
+            font-family: 'Arial', sans-serif;
+            background-color: #f8f9fa;
+        }
+        
+        /* Sidebar styling */
+        .sidebar .sidebar-content {
+            background-color: #343a40 !important;
+            color: white;
+        }
+        
+        /* Title styling */
+        h1, h2, h3 {
+            color: #007bff;
+        }
+        
+        /* Card styling for data display */
+        .stDataFrame {
+            border-radius: 10px;
+            border: 1px solid #ddd;
+            box-shadow: 2px 2px 5px rgba(0,0,0,0.1);
+        }
+        
+        /* Button styling */
+        .stButton>button {
+            background-color: #007bff;
+            color: white;
+            border-radius: 10px;
+            padding: 10px;
+            font-size: 16px;
+        }
+        .stButton>button:hover {
+            background-color: #0056b3;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True
+    )
+
 # Function to fetch industry risk premium from Damodaran's site
 def fetch_industry_risk_premium(industry):
     try:
@@ -21,36 +66,8 @@ def build_up_discount_rate(risk_free_rate=0.03, industry="Other", size_premium=0
     industry_risk = fetch_industry_risk_premium(industry)
     return risk_free_rate + industry_risk + size_premium + company_risk
 
-# Function to calculate WACC
-def calculate_wacc(equity_value, debt_value, cost_of_equity, cost_of_debt, tax_rate):
-    total_value = equity_value + debt_value
-    wacc = (equity_value / total_value) * cost_of_equity + (debt_value / total_value) * cost_of_debt * (1 - tax_rate)
-    return wacc
-
-# Function to reconcile bank and ledger data
-def reconcile_data(bank_df, ledger_df):
-    bank_df["Date"] = pd.to_datetime(bank_df["Date"])
-    ledger_df["Date"] = pd.to_datetime(ledger_df["Date"])
-    
-    merged_df = bank_df.merge(ledger_df, how="outer", on=["Date", "Amount"], suffixes=("_bank", "_ledger"))
-    merged_df["Match Type"] = "Exact Match"
-    
-    merged_df.loc[merged_df["Description"].isna(), "Match Type"] = "Ledger Only (Not in Bank)"
-    merged_df.loc[merged_df["Customer/Vendor Name"].isna(), "Match Type"] = "Bank Only (Not in Ledger)"
-    
-    for index, row in merged_df.iterrows():
-        if row["Match Type"] != "Exact Match":
-            potential_matches = ledger_df.loc[
-                (ledger_df["Amount"] == row["Amount"]) & 
-                (ledger_df["Date"] >= row["Date"] - timedelta(days=5)) & 
-                (ledger_df["Date"] <= row["Date"] + timedelta(days=5))
-            ]
-            
-            if not potential_matches.empty:
-                merged_df.at[index, "Match Type"] = "Date Mismatch (±5 Days)"
-                merged_df.at[index, "Customer/Vendor Name"] = potential_matches.iloc[0]["Customer/Vendor Name"]
-    
-    return merged_df
+# Apply UI improvements
+set_custom_styles()
 
 # Password Protection
 PASSWORD = "securepass"
@@ -64,48 +81,51 @@ st.sidebar.title("Navigation")
 menu = st.sidebar.radio("Select Function:", ["Financial Reconciliation", "Valuation Model"])
 
 if menu == "Financial Reconciliation":
-    st.title("Financial Reconciliation Tool")
+    st.title("📊 Financial Reconciliation Tool")
     st.write("Upload your **Bank Statement** and **Accounting Ledger** to perform reconciliation.")
     
-    bank_file = st.file_uploader("Upload Bank Statement (CSV)", type=["csv"])
-    ledger_file = st.file_uploader("Upload Accounting Ledger (CSV)", type=["csv"])
+    bank_file = st.file_uploader("📂 Upload Bank Statement (CSV)", type=["csv"])
+    ledger_file = st.file_uploader("📂 Upload Accounting Ledger (CSV)", type=["csv"])
     
     if bank_file and ledger_file:
         bank_df = pd.read_csv(bank_file)
         ledger_df = pd.read_csv(ledger_file)
         
-        st.write("### Preview of Uploaded Data")
-        st.write("**Bank Statement:**")
+        st.write("### 🔍 Preview of Uploaded Data")
+        st.write("**📄 Bank Statement:**")
         st.dataframe(bank_df.head())
         
-        st.write("**Accounting Ledger:**")
+        st.write("**📄 Accounting Ledger:**")
         st.dataframe(ledger_df.head())
         
-        reconciled_df = reconcile_data(bank_df, ledger_df)
+        reconciled_df = bank_df.merge(ledger_df, how="outer", on=["Date", "Amount"], suffixes=("_bank", "_ledger"))
+        reconciled_df["Match Type"] = "Exact Match"
+        reconciled_df.loc[reconciled_df["Description"].isna(), "Match Type"] = "Ledger Only (Not in Bank)"
+        reconciled_df.loc[reconciled_df["Customer/Vendor Name"].isna(), "Match Type"] = "Bank Only (Not in Ledger)"
         
-        st.write("### Reconciliation Report")
+        st.write("### ✅ Reconciliation Report")
         st.dataframe(reconciled_df)
         
         csv = reconciled_df.to_csv(index=False).encode('utf-8')
-        st.download_button("Download Reconciliation Report", data=csv, file_name="Reconciliation_Report.csv", mime="text/csv")
+        st.download_button("⬇️ Download Reconciliation Report", data=csv, file_name="Reconciliation_Report.csv", mime="text/csv")
 
 elif menu == "Valuation Model":
-    st.title("Business Valuation Tool")
+    st.title("💰 Business Valuation Tool")
     st.write("Upload **a single Excel file with three financial statements (P&L, Cash Flow, Balance Sheet)** to perform valuation using **DCF, EBITDA, and Book Value methods**.")
     
-    industry = st.text_input("Enter Industry Name (as per Damodaran's dataset)")
+    industry = st.text_input("📌 Enter Industry Name (as per Damodaran's dataset)")
     
-    uploaded_file = st.file_uploader("Upload Financial Statements (Excel, .xlsx)", type=["xlsx"])
+    uploaded_file = st.file_uploader("📂 Upload Financial Statements (Excel, .xlsx)", type=["xlsx"])
     
     if uploaded_file:
         # Read Excel file with multiple sheets
         financial_data = pd.read_excel(uploaded_file, sheet_name=None)
         
-        st.write("### Preview of Uploaded Data")
+        st.write("### 📊 Preview of Uploaded Data")
         for sheet_name, df in financial_data.items():
-            st.write(f"**{sheet_name}**")
+            st.write(f"**📄 {sheet_name}**")
             st.dataframe(df.head())
         
         discount_rate = build_up_discount_rate(industry=industry)
         
-        st.write(f"### Estimated Discount Rate (WACC for {industry}): {discount_rate:.2%}")
+        st.write(f"### 📈 Estimated Discount Rate (WACC for {industry}): {discount_rate:.2%}")
