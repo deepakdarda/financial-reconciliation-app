@@ -56,21 +56,19 @@ menu = st.sidebar.radio("Select Function:", ["Financial Reconciliation", "Valuat
 
 if menu == "Valuation Model":
     st.title("Business Valuation Tool")
-    st.write("Upload **past 3-5 years of financials** to perform a valuation using **DCF, EBITDA, and Book Value methods**.")
+    st.write("Upload **a single Excel file with three financial statements (P&L, Cash Flow, Balance Sheet)** to perform valuation using **DCF, EBITDA, and Book Value methods**.")
     
     industry = st.text_input("Enter Industry Name (as per Damodaran's dataset)")
     
-    uploaded_files = st.file_uploader("Upload Financial Statements (P&L, Cash Flow, Balance Sheet) - 1 per year", type=["csv"], accept_multiple_files=True)
+    uploaded_file = st.file_uploader("Upload Financial Statements (Excel, .xlsx)", type=["xlsx"])
     
-    if uploaded_files:
-        financial_data = {}
-        for file in uploaded_files:
-            df = pd.read_csv(file)
-            financial_data[file.name] = df
+    if uploaded_file:
+        # Read Excel file with multiple sheets
+        financial_data = pd.read_excel(uploaded_file, sheet_name=None)
         
         st.write("### Preview of Uploaded Data")
-        for file_name, df in financial_data.items():
-            st.write(f"**{file_name}**")
+        for sheet_name, df in financial_data.items():
+            st.write(f"**{sheet_name}**")
             st.dataframe(df.head())
         
         discount_rate = build_up_discount_rate(industry=industry)
@@ -87,21 +85,28 @@ if menu == "Valuation Model":
         interest_expense = 0
         tax_rate = 0.25  # Default tax rate
         
-        for df in financial_data.values():
-            if "Cash Flow" in df.columns:
-                cash_flows.append(df["Cash Flow"].sum())
-            if "EBITDA" in df.columns:
-                ebitda_list.append(df["EBITDA"].sum())
-            if "Total Assets" in df.columns:
-                total_assets += df["Total Assets"].iloc[-1]
-            if "Total Liabilities" in df.columns:
-                total_liabilities += df["Total Liabilities"].iloc[-1]
-            if "Debt" in df.columns:
-                debt_value += df["Debt"].iloc[-1]
-            if "Equity" in df.columns:
-                equity_value += df["Equity"].iloc[-1]
-            if "Interest Expense" in df.columns:
-                interest_expense += df["Interest Expense"].sum()
+        if "Cash Flow" in financial_data:
+            cash_flow_df = financial_data["Cash Flow"]
+            if "Cash from Operations" in cash_flow_df.columns:
+                cash_flows.append(cash_flow_df["Cash from Operations"].sum())
+        
+        if "Profit & Loss" in financial_data:
+            pl_df = financial_data["Profit & Loss"]
+            if "EBITDA" in pl_df.columns:
+                ebitda_list.append(pl_df["EBITDA"].sum())
+            if "Interest Expense" in pl_df.columns:
+                interest_expense += pl_df["Interest Expense"].sum()
+        
+        if "Balance Sheet" in financial_data:
+            bs_df = financial_data["Balance Sheet"]
+            if "Total Assets" in bs_df.columns:
+                total_assets = bs_df["Total Assets"].iloc[-1]
+            if "Total Liabilities" in bs_df.columns:
+                total_liabilities = bs_df["Total Liabilities"].iloc[-1]
+            if "Equity" in bs_df.columns:
+                equity_value = bs_df["Equity"].iloc[-1]
+            if "Debt" in bs_df.columns:
+                debt_value = bs_df["Debt"].iloc[-1]
         
         cost_of_equity = discount_rate
         cost_of_debt = interest_expense / debt_value if debt_value else 0.05
@@ -117,7 +122,7 @@ if menu == "Valuation Model":
         
         # Calculate EBITDA Valuation
         if ebitda_list:
-            ebitda_value = ebitda_valuation(ebitda_list[-3:], ebitda_multiple)
+            ebitda_value = ebitda_valuation(ebitda_list, ebitda_multiple)
             st.write(f"### EBITDA-Based Valuation: ${ebitda_value:,.2f}")
         
         # Calculate Book Value Valuation
