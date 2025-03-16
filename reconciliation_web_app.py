@@ -3,29 +3,16 @@ import pandas as pd
 import os
 from datetime import timedelta
 
-# Define Password Protection
-PASSWORD = "India321"  # Change this to your preferred password
-
-password = st.text_input("Enter Password:", type="password")
-
-if password != PASSWORD:
-    st.warning("Incorrect password. Please try again.")
-    st.stop()
-    
-# Function to reconcile bank and ledger data
 def reconcile_data(bank_df, ledger_df):
     bank_df["Date"] = pd.to_datetime(bank_df["Date"])
     ledger_df["Date"] = pd.to_datetime(ledger_df["Date"])
     
-    # Merge exact matches
     merged_df = bank_df.merge(ledger_df, how="outer", on=["Date", "Amount"], suffixes=("_bank", "_ledger"))
     merged_df["Match Type"] = "Exact Match"
     
-    # Identify bank-only and ledger-only entries
     merged_df.loc[merged_df["Description"].isna(), "Match Type"] = "Ledger Only (Not in Bank)"
     merged_df.loc[merged_df["Customer/Vendor Name"].isna(), "Match Type"] = "Bank Only (Not in Ledger)"
     
-    # Handle date mismatches within ±5 days window
     for index, row in merged_df.iterrows():
         if row["Match Type"] != "Exact Match":
             potential_matches = ledger_df.loc[
@@ -40,34 +27,63 @@ def reconcile_data(bank_df, ledger_df):
     
     return merged_df
 
-# Streamlit UI
-st.title("Financial Reconciliation Tool")
+def valuation_model(financial_df):
+    # Placeholder for DCF and EBITDA-based valuation
+    return financial_df  # To be expanded with actual valuation logic
 
-st.write("Upload your **Bank Statement** and **Accounting Ledger** to perform reconciliation.")
+# Password Protection
+PASSWORD = "securepass"
+password = st.text_input("Enter Password:", type="password")
+if password != PASSWORD:
+    st.warning("Incorrect password. Please try again.")
+    st.stop()
 
-# File uploaders
-bank_file = st.file_uploader("Upload Bank Statement (CSV)", type=["csv"])
-ledger_file = st.file_uploader("Upload Accounting Ledger (CSV)", type=["csv"])
+# Sidebar Navigation
+st.sidebar.title("Navigation")
+menu = st.sidebar.radio("Select Function:", ["Financial Reconciliation", "Valuation Model"])
 
-if bank_file and ledger_file:
-    # Load data
-    bank_df = pd.read_csv(bank_file)
-    ledger_df = pd.read_csv(ledger_file)
+if menu == "Financial Reconciliation":
+    st.title("Financial Reconciliation Tool")
+    st.write("Upload your **Bank Statement** and **Accounting Ledger** to perform reconciliation.")
     
-    st.write("### Preview of Uploaded Data")
-    st.write("**Bank Statement:**")
-    st.dataframe(bank_df.head())
+    bank_file = st.file_uploader("Upload Bank Statement (CSV)", type=["csv"])
+    ledger_file = st.file_uploader("Upload Accounting Ledger (CSV)", type=["csv"])
     
-    st.write("**Accounting Ledger:**")
-    st.dataframe(ledger_df.head())
+    if bank_file and ledger_file:
+        bank_df = pd.read_csv(bank_file)
+        ledger_df = pd.read_csv(ledger_file)
+        
+        st.write("### Preview of Uploaded Data")
+        st.write("**Bank Statement:**")
+        st.dataframe(bank_df.head())
+        
+        st.write("**Accounting Ledger:**")
+        st.dataframe(ledger_df.head())
+        
+        reconciled_df = reconcile_data(bank_df, ledger_df)
+        
+        st.write("### Reconciliation Report")
+        st.dataframe(reconciled_df)
+        
+        csv = reconciled_df.to_csv(index=False).encode('utf-8')
+        st.download_button("Download Reconciliation Report", data=csv, file_name="Reconciliation_Report.csv", mime="text/csv")
+
+elif menu == "Valuation Model":
+    st.title("Business Valuation Tool")
+    st.write("Upload **past 3-5 years of financials** to perform a valuation using **DCF and EBITDA-based methods**.")
     
-    # Run reconciliation
-    reconciled_df = reconcile_data(bank_df, ledger_df)
+    financial_file = st.file_uploader("Upload Financial Statements (CSV)", type=["csv"])
     
-    # Display results
-    st.write("### Reconciliation Report")
-    st.dataframe(reconciled_df)
-    
-    # Provide download link
-    csv = reconciled_df.to_csv(index=False).encode('utf-8')
-    st.download_button("Download Reconciliation Report", data=csv, file_name="Reconciliation_Report.csv", mime="text/csv")
+    if financial_file:
+        financial_df = pd.read_csv(financial_file)
+        
+        st.write("### Preview of Financial Data")
+        st.dataframe(financial_df.head())
+        
+        valuation_df = valuation_model(financial_df)
+        
+        st.write("### Valuation Results (To Be Implemented)")
+        st.dataframe(valuation_df)
+        
+        csv = valuation_df.to_csv(index=False).encode('utf-8')
+        st.download_button("Download Valuation Report", data=csv, file_name="Valuation_Report.csv", mime="text/csv")
