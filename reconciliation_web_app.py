@@ -27,21 +27,30 @@ def calculate_wacc(equity_value, debt_value, cost_of_equity, cost_of_debt, tax_r
     wacc = (equity_value / total_value) * cost_of_equity + (debt_value / total_value) * cost_of_debt * (1 - tax_rate)
     return wacc
 
-# Function to perform Discounted Cash Flow (DCF) valuation
-def dcf_valuation(cash_flows, discount_rate, terminal_growth, years):
-    terminal_value = cash_flows[-1] * (1 + terminal_growth) / (discount_rate - terminal_growth)
-    discounted_cf = [cf / (1 + discount_rate) ** (i + 1) for i, cf in enumerate(cash_flows)]
-    dcf_value = sum(discounted_cf) + (terminal_value / (1 + discount_rate) ** years)
-    return dcf_value
-
-# Function to perform EBITDA-based valuation
-def ebitda_valuation(ebitda_list, multiple):
-    weighted_ebitda = sum(ebitda * weight for ebitda, weight in zip(ebitda_list, [0.2, 0.3, 0.5]))
-    return weighted_ebitda * multiple
-
-# Function to calculate Book Value valuation
-def book_valuation(total_assets, total_liabilities):
-    return total_assets - total_liabilities
+# Function to reconcile bank and ledger data
+def reconcile_data(bank_df, ledger_df):
+    bank_df["Date"] = pd.to_datetime(bank_df["Date"])
+    ledger_df["Date"] = pd.to_datetime(ledger_df["Date"])
+    
+    merged_df = bank_df.merge(ledger_df, how="outer", on=["Date", "Amount"], suffixes=("_bank", "_ledger"))
+    merged_df["Match Type"] = "Exact Match"
+    
+    merged_df.loc[merged_df["Description"].isna(), "Match Type"] = "Ledger Only (Not in Bank)"
+    merged_df.loc[merged_df["Customer/Vendor Name"].isna(), "Match Type"] = "Bank Only (Not in Ledger)"
+    
+    for index, row in merged_df.iterrows():
+        if row["Match Type"] != "Exact Match":
+            potential_matches = ledger_df.loc[
+                (ledger_df["Amount"] == row["Amount"]) & 
+                (ledger_df["Date"] >= row["Date"] - timedelta(days=5)) & 
+                (ledger_df["Date"] <= row["Date"] + timedelta(days=5))
+            ]
+            
+            if not potential_matches.empty:
+                merged_df.at[index, "Match Type"] = "Date Mismatch (±5 Days)"
+                merged_df.at[index, "Customer/Vendor Name"] = potential_matches.iloc[0]["Customer/Vendor Name"]
+    
+    return merged_df
 
 # Password Protection
 PASSWORD = "securepass"
@@ -54,7 +63,33 @@ if password != PASSWORD:
 st.sidebar.title("Navigation")
 menu = st.sidebar.radio("Select Function:", ["Financial Reconciliation", "Valuation Model"])
 
-if menu == "Valuation Model":
+if menu == "Financial Reconciliation":
+    st.title("Financial Reconciliation Tool")
+    st.write("Upload your **Bank Statement** and **Accounting Ledger** to perform reconciliation.")
+    
+    bank_file = st.file_uploader("Upload Bank Statement (CSV)", type=["csv"])
+    ledger_file = st.file_uploader("Upload Accounting Ledger (CSV)", type=["csv"])
+    
+    if bank_file and ledger_file:
+        bank_df = pd.read_csv(bank_file)
+        ledger_df = pd.read_csv(ledger_file)
+        
+        st.write("### Preview of Uploaded Data")
+        st.write("**Bank Statement:**")
+        st.dataframe(bank_df.head())
+        
+        st.write("**Accounting Ledger:**")
+        st.dataframe(ledger_df.head())
+        
+        reconciled_df = reconcile_data(bank_df, ledger_df)
+        
+        st.write("### Reconciliation Report")
+        st.dataframe(reconciled_df)
+        
+        csv = reconciled_df.to_csv(index=False).encode('utf-8')
+        st.download_button("Download Reconciliation Report", data=csv, file_name="Reconciliation_Report.csv", mime="text/csv")
+
+elif menu == "Valuation Model":
     st.title("Business Valuation Tool")
     st.write("Upload **a single Excel file with three financial statements (P&L, Cash Flow, Balance Sheet)** to perform valuation using **DCF, EBITDA, and Book Value methods**.")
     
@@ -72,60 +107,5 @@ if menu == "Valuation Model":
             st.dataframe(df.head())
         
         discount_rate = build_up_discount_rate(industry=industry)
-        terminal_growth = st.number_input("Enter Terminal Growth Rate (%)", min_value=0.0, max_value=0.1, value=0.02)
-        ebitda_multiple = st.number_input("Enter Industry EBITDA Multiple", min_value=1.0, max_value=20.0, value=5.0)
         
-        # Extract financials from uploaded data
-        cash_flows = []
-        ebitda_list = []
-        total_assets = 0
-        total_liabilities = 0
-        equity_value = 0
-        debt_value = 0
-        interest_expense = 0
-        tax_rate = 0.25  # Default tax rate
-        
-        if "Cash Flow" in financial_data:
-            cash_flow_df = financial_data["Cash Flow"]
-            if "Cash from Operations" in cash_flow_df.columns:
-                cash_flows.append(cash_flow_df["Cash from Operations"].sum())
-        
-        if "Profit & Loss" in financial_data:
-            pl_df = financial_data["Profit & Loss"]
-            if "EBITDA" in pl_df.columns:
-                ebitda_list.append(pl_df["EBITDA"].sum())
-            if "Interest Expense" in pl_df.columns:
-                interest_expense += pl_df["Interest Expense"].sum()
-        
-        if "Balance Sheet" in financial_data:
-            bs_df = financial_data["Balance Sheet"]
-            if "Total Assets" in bs_df.columns:
-                total_assets = bs_df["Total Assets"].iloc[-1]
-            if "Total Liabilities" in bs_df.columns:
-                total_liabilities = bs_df["Total Liabilities"].iloc[-1]
-            if "Equity" in bs_df.columns:
-                equity_value = bs_df["Equity"].iloc[-1]
-            if "Debt" in bs_df.columns:
-                debt_value = bs_df["Debt"].iloc[-1]
-        
-        cost_of_equity = discount_rate
-        cost_of_debt = interest_expense / debt_value if debt_value else 0.05
-        wacc = calculate_wacc(equity_value, debt_value, cost_of_equity, cost_of_debt, tax_rate)
-        
-        st.write(f"### Estimated Discount Rate (WACC for {industry}): {wacc:.2%}")
-        st.write(f"### Current Debt to Equity Ratio: {debt_value / equity_value if equity_value else 'N/A'}")
-        
-        # Calculate DCF Valuation
-        if cash_flows:
-            dcf_value = dcf_valuation(cash_flows, wacc, terminal_growth, len(cash_flows))
-            st.write(f"### DCF Valuation: ${dcf_value:,.2f}")
-        
-        # Calculate EBITDA Valuation
-        if ebitda_list:
-            ebitda_value = ebitda_valuation(ebitda_list, ebitda_multiple)
-            st.write(f"### EBITDA-Based Valuation: ${ebitda_value:,.2f}")
-        
-        # Calculate Book Value Valuation
-        if total_assets and total_liabilities:
-            book_value = book_valuation(total_assets, total_liabilities)
-            st.write(f"### Book Value-Based Valuation: ${book_value:,.2f}")
+        st.write(f"### Estimated Discount Rate (WACC for {industry}): {discount_rate:.2%}")
