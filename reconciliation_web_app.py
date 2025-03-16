@@ -1,7 +1,17 @@
 import streamlit as st
 import pandas as pd
+import os
 from datetime import timedelta
 
+# Define Password Protection
+PASSWORD = "India321"  # Change this to your preferred password
+
+password = st.text_input("Enter Password:", type="password")
+
+if password != PASSWORD:
+    st.warning("Incorrect password. Please try again.")
+    st.stop()
+    
 # Function to reconcile bank and ledger data
 def reconcile_data(bank_df, ledger_df):
     bank_df["Date"] = pd.to_datetime(bank_df["Date"])
